@@ -45,7 +45,7 @@ public class Message {
 
     @ElementCollection
     @CollectionTable(name = "message_reactions", joinColumns = @JoinColumn(name = "message_id"))
-    @MapKeyColumn(name = "reaction_id")
+    @MapKeyColumn(name = "reaction_id", length = 191)
     @Column(name = "reaction_data")
     private Map<String, Reaction> reactions;
 
