@@ -13,12 +13,20 @@ try {
   console.warn('Could not load secrets.toml, using environment variables instead')
 }
 
+// Determine backend URL based on environment
+const backendUrl = process.env.NODE_ENV === 'production'
+  ? process.env.BACKEND_URL || 'https://chatifying.onrender.com' // Replace with your actual backend URL or use env variable
+  : 'http://localhost:8080';
+
+console.log(`Using backend URL: ${backendUrl}`);
+
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
   define: {
-   'import.meta.env.GEMINI_API_KEY': JSON.stringify(secrets.GEMINI_API_KEY || ''),
-   global: 'window',
+    'import.meta.env.GEMINI_API_KEY': JSON.stringify(secrets.GEMINI_API_KEY || ''),
+    'import.meta.env.BACKEND_URL': JSON.stringify(backendUrl), // Make backend URL available in app
+    global: 'window',
   },
   optimizeDeps: {
     include: ['sockjs-client'],
@@ -26,12 +34,12 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        target: backendUrl,
         changeOrigin: true,
         secure: false,
       },
       '/ws': {
-        target: 'http://localhost:8080',
+        target: backendUrl,
         ws: true,
       }
     },
