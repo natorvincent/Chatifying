@@ -63,6 +63,11 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
   const [imageZoom, setImageZoom] = useState(1);
   const stompClientRef = useRef(null);
 
+  // Helper function to get the backend URL based on environment
+  const getBackendUrl = () => {
+    return process.env.NODE_ENV === 'production' ? import.meta.env.BACKEND_URL : '';
+  };
+
   const pulseAnimation = keyframes`
     0% {
       box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.4);
@@ -118,7 +123,7 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
   useEffect(() => {
     if (!chatUser) return;
     const chatId = [currentUser.uid, chatUser.userId].sort().join('_');
-    axios.get(`/api/messages/${chatId}`)
+    axios.get(`${getBackendUrl()}/api/messages/${chatId}`)
       .then(res => {
         // Sort messages by timestamp to ensure proper order (oldest to newest)
         const sortedMessages = res.data.sort((a, b) => {
@@ -130,7 +135,11 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
       .catch(console.error);
       
     // Set up WebSocket connection for real-time messages
-    const socket = new SockJS('/ws');
+    const wsUrl = process.env.NODE_ENV === 'production'
+      ? `${import.meta.env.BACKEND_URL}/ws`
+      : '/ws';
+    
+    const socket = new SockJS(wsUrl);
     const client = new Client({
       webSocketFactory: () => socket,
       reconnectDelay: 5000,
@@ -149,7 +158,7 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
           // Fetch latest language preference before processing new messages
           let latestLanguage = contactLanguage;
           try {
-            const userResponse = await axios.get(`/api/users/${chatUser.userId}`);
+            const userResponse = await axios.get(`${getBackendUrl()}/api/users/${chatUser.userId}`);
             latestLanguage = userResponse.data.language;
             
             // Update contact language if needed
@@ -230,7 +239,11 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
     if (!chatUser) return;
     
     // Set up WebSocket connection for real-time user updates
-    const userSocket = new SockJS('/ws');
+    const wsUrl = process.env.NODE_ENV === 'production'
+      ? `${import.meta.env.BACKEND_URL}/ws`
+      : '/ws';
+    
+    const userSocket = new SockJS(wsUrl);
     const userClient = new Client({
       webSocketFactory: () => userSocket,
       reconnectDelay: 5000,
@@ -266,7 +279,7 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
     userClient.activate();
     
     // Always fetch the latest user data from the server to ensure we have the most recent language setting
-    axios.get(`/api/users/${chatUser.userId}`)
+    axios.get(`${getBackendUrl()}/api/users/${chatUser.userId}`)
       .then(res => {
         if (res.data.language !== contactLanguage) {
           setContactLanguage(res.data.language);
@@ -290,7 +303,7 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
     setContactLanguage(chatUser.language);
     setPreviousLanguage(chatUser.language);
     // Status from status endpoint
-    axios.get('/api/status')
+    axios.get(`${getBackendUrl()}/api/status`)
       .then(res => {
         setChatUserStatus(res.data[chatUser.userId] || 'offline');
         // Store initial status map for sidebar
@@ -325,7 +338,7 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
       // First save the initial message with "Translating..." text
       // We'll let the WebSocket update handle adding this message to the UI
       // to prevent duplicates when the websocket message arrives
-      const { data: saved } = await axios.post('/api/messages', initialPayload);
+      const { data: saved } = await axios.post(`${getBackendUrl()}/api/messages`, initialPayload);
       
       // Track the message ID so we can update it with the translation
       const messageId = saved.messageId;
@@ -351,7 +364,7 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
       // Again, let the WebSocket handle the UI update
       try {
         await axios.put(
-          `/api/messages/${messageId}`, 
+          `${getBackendUrl()}/api/messages/${messageId}`, 
           updatedMessage
         );
       } catch (updateError) {
@@ -431,18 +444,18 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
         try {
             if (currentMsg.message === currentMsg.messageVar1) {
                 const { data } = await axios.put(
-                    `/api/messages/${messageId}/regenerate`,
+                    `${getBackendUrl()}/api/messages/${messageId}/regenerate`,
                     { variation: 'messageVar2' }
                 );
                 updatedMsg = data;
             } else if (currentMsg.message === currentMsg.messageVar2) {
                 const { data } = await axios.put(
-                    `/api/messages/${messageId}/regenerate`,
+                    `${getBackendUrl()}/api/messages/${messageId}/regenerate`,
                     { variation: 'messageVar3' }
                 );
                 updatedMsg = data;
             } else {
-                const resp = await axios.get(`/api/users/${chatUser.userId}`);
+                const resp = await axios.get(`${getBackendUrl()}/api/users/${chatUser.userId}`);
                 const latestLanguage = resp.data.language;
                 const translation = await translateToLanguage(
                     currentMsg.messageOG,
@@ -497,7 +510,7 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
     if (chatUser && isAtBottom) {
       const chatId = [currentUser.uid, chatUser.userId].sort().join('_');
       // Use axios to call Spring Boot endpoint instead of Firebase
-      axios.put(`/api/messages/${chatId}/read`, {
+      axios.put(`${getBackendUrl()}/api/messages/${chatId}/read`, {
         receiverId: currentUser.uid
       })
       .catch(error => {
@@ -642,7 +655,7 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
       
       // Upload image to the Spring Boot backend
       // Let the WebSocket handle adding the message to the UI
-      await axios.post('/api/messages/image', formData, {
+      await axios.post(`${getBackendUrl()}/api/messages/image`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
@@ -683,7 +696,7 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
         return;
     }
     try {
-        const response = await axios.get(`/api/users/${chatUser.userId}`);
+        const response = await axios.get(`${getBackendUrl()}/api/users/${chatUser.userId}`);
         const latestLanguage = response.data.language;
         if (latestLanguage !== contactLanguage) {
             setContactLanguage(latestLanguage);
