@@ -1,8 +1,12 @@
 [build]
-  publish = "build"
-  command = "npm run build"
+  publish = "dist"  # Vite's default output directory is "dist", not "build"
+  command = "cp secrets.example.toml secrets.toml && CI=false npm run build"  # Create secrets.toml before build
 
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+
+# Environment variables - add your API key here or in Netlify dashboard
+[build.environment]
+GEMINI_API_KEY = "AIzaSyDG2ukqRqIDjwJuaL3POs7217gnVCJwzOA"
