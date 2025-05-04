@@ -58,7 +58,7 @@ export function AuthProvider({ children }) {
   async function registerUser(email, password) {
     setIsRegistering(true);
     try {
-      await axios.post('/api/auth/register', { email, password });
+      await axios.post(`${import.meta.env.BACKEND_URL}/api/auth/register`, { email, password });
     } finally {
       setIsRegistering(false);
     }
@@ -67,7 +67,7 @@ export function AuthProvider({ children }) {
   async function login(email, password) {
     setLoading(true);
     try {
-      const response = await axios.post('/api/auth/login', { email, password });
+      const response = await axios.post(`${import.meta.env.BACKEND_URL}/api/auth/login`, { email, password });
       // Map backend user id to uid for compatibility with existing ChatPage logic
       const user = { ...response.data, uid: response.data.id };
       
@@ -124,7 +124,7 @@ export function AuthProvider({ children }) {
       };
       
       // Fire and forget API call (handled via catch)
-      axios.put('/api/auth/profile', payload)
+      axios.put(`${import.meta.env.BACKEND_URL}/api/auth/profile`, payload)
         .then(response => {
           // If successful, update with the server response
           const serverUser = { ...response.data, uid: response.data.id };
