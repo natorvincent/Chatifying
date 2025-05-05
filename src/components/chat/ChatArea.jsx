@@ -65,9 +65,15 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
 
   // Helper function to get the backend URL based on environment
   const getBackendUrl = () => {
-    return process.env.NODE_ENV === 'production' ? import.meta.env.BACKEND_URL : '';
+    return process.env.NODE_ENV === 'production' 
+      ? 'https://chatifying.onrender.com' 
+      : 'http://localhost:8080';
   };
-
+  
+  // Then update your WebSocket URL creation
+  const wsUrl = `${getBackendUrl()}/ws`;
+  const socket = new SockJS(wsUrl);
+  
   const pulseAnimation = keyframes`
     0% {
       box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.4);
