@@ -18,6 +18,13 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        registry.addEndpoint("/ws").setAllowedOriginPatterns("*").withSockJS();
+        // Specific allowed origins for WebSockets
+        registry.addEndpoint("/ws")
+                .setAllowedOrigins(
+                        "https://chatifies.netlify.app",  // Your Netlify domain
+                        "http://localhost:5173",          // Local Vite development
+                        "http://localhost:3000"           // Alternative local development
+                )
+                .withSockJS();
     }
-} 
+}

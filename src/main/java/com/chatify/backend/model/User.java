@@ -12,10 +12,10 @@ public class User {
     @Column(length = 36)
     private String id;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false, unique = true, length = 191)  // Added length constraint
     private String email;
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = 191)  // Added length constraint
     private String username;
 
     @Column(nullable = false)
