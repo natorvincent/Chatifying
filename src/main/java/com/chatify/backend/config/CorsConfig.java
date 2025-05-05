@@ -18,7 +18,7 @@ public class CorsConfig {
 
         // Specific allowed origins for HTTP requests
         config.setAllowedOrigins(Arrays.asList(
-                "https://chatifies.netlify.app",  // Your Netlify domain
+                "https://chatifies.netlify.app/",  // Your Netlify domain
                 "http://localhost:5173",          // Local Vite development
                 "http://localhost:3000"           // Alternative local development
         ));

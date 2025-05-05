@@ -21,10 +21,13 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         // Specific allowed origins for WebSockets
         registry.addEndpoint("/ws")
                 .setAllowedOrigins(
-                        "https://chatifies.netlify.app",  // Your Netlify domain
+                        "https://chatifies.netlify.app/",  // Your Netlify domain
                         "http://localhost:5173",          // Local Vite development
                         "http://localhost:3000"           // Alternative local development
                 )
-                .withSockJS();
+                .withSockJS()
+                .setSessionCookieNeeded(false)    // Don't require cookies for WebSocket
+                .setWebSocketEnabled(true)        // Ensure WebSockets are enabled
+                .setHeartbeatTime(25000);         // ;
     }
 }
