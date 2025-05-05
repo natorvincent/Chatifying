@@ -67,7 +67,12 @@ export function AuthProvider({ children }) {
   async function login(email, password) {
     setLoading(true);
     try {
-      const response = await axios.post(`${import.meta.env.BACKEND_URL}/api/auth/login`, { email, password });
+      // Get the backend URL with the same function used in ChatArea
+      const backendUrl = process.env.NODE_ENV === 'production'
+        ? 'https://chatifying.onrender.com'
+        : 'http://localhost:8080';
+        
+      const response = await axios.post(`${backendUrl}/api/auth/login`, { email, password });
       // Map backend user id to uid for compatibility with existing ChatPage logic
       const user = { ...response.data, uid: response.data.id };
       

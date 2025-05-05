@@ -70,10 +70,6 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
       : 'http://localhost:8080';
   };
   
-  // Then update your WebSocket URL creation
-  const wsUrl = `${getBackendUrl()}/ws`;
-  const socket = new SockJS(wsUrl);
-  
   const pulseAnimation = keyframes`
     0% {
       box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.4);
@@ -138,12 +134,14 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
         setMessages(sortedMessages);
         setHasNewMessages(false);
       })
-      .catch(console.error);
+      .catch(error => {
+        console.error('Error fetching messages:', error);
+      });
       
     // Set up WebSocket connection for real-time messages
-    const wsUrl = process.env.NODE_ENV === 'production'
-      ? `${import.meta.env.BACKEND_URL}/ws`
-      : '/ws';
+    const wsUrl = `${getBackendUrl()}/ws`;
+    
+    console.log('Connecting to WebSocket at:', wsUrl);
     
     const socket = new SockJS(wsUrl);
     const client = new Client({
@@ -228,6 +226,10 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
       console.error('STOMP error:', frame);
     };
     
+    client.onWebSocketError = (event) => {
+      console.error('WebSocket error:', event);
+    };
+    
     // Activate WebSocket connection
     client.activate();
     stompClientRef.current = client;
@@ -245,9 +247,9 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
     if (!chatUser) return;
     
     // Set up WebSocket connection for real-time user updates
-    const wsUrl = process.env.NODE_ENV === 'production'
-      ? `${import.meta.env.BACKEND_URL}/ws`
-      : '/ws';
+    const wsUrl = `${getBackendUrl()}/ws`;
+    
+    console.log('Connecting to user updates WebSocket at:', wsUrl);
     
     const userSocket = new SockJS(wsUrl);
     const userClient = new Client({
@@ -280,6 +282,14 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
           console.error('Error handling WebSocket message:', error);
         }
       });
+    };
+    
+    userClient.onStompError = (frame) => {
+      console.error('User updates STOMP error:', frame);
+    };
+    
+    userClient.onWebSocketError = (event) => {
+      console.error('User updates WebSocket error:', event);
     };
     
     userClient.activate();
@@ -799,7 +809,6 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
           </IconButton>
         </Box>
       </Box>
-
       <Box ref={chatContainerRef} sx={{ 
         flexGrow: 1,
         overflowY: 'auto',

@@ -41,6 +41,7 @@ export default defineConfig({
       '/ws': {
         target: backendUrl,
         ws: true,
+        changeOrigin: true,
       }
     },
   },
