@@ -257,7 +257,7 @@ const LandingPage = () => {
                     margin: '0 auto',
                     mt: 2
                 }}>
-                    Find us on <a href="https://github.com/ezzeljan/Chatify" target="_blank" rel="noopener noreferrer" style={{ color: '#7E60BF', textDecoration: 'underline' }}>GitHub</a>.
+                    Find us on <a href="https://github.com/natorvincent/Chatifying" target="_blank" rel="noopener noreferrer" style={{ color: '#7E60BF', textDecoration: 'underline' }}>GitHub</a>.
                 </Typography>
                 <Typography variant="body2" sx={{ 
                     color: '#a26cc8', 
