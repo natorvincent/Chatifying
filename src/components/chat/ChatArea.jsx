@@ -65,9 +65,13 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
 
   // Helper function to get the backend URL based on environment
   const getBackendUrl = () => {
-    return process.env.NODE_ENV === 'production' 
-      ? 'https://chatifying.onrender.com' 
-      : 'http://localhost:8080';
+    if (process.env.NODE_ENV === 'production') {
+      // IMPORTANT: Always use the Render URL in production, never Netlify
+      return 'https://chatifying.onrender.com';
+    } else {
+      // In development, use localhost
+      return 'http://localhost:8080';
+    }
   };
   
   const pulseAnimation = keyframes`
@@ -86,10 +90,10 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
 
   const scrollToBottom = useCallback(() => {
     if (isAtBottom) {
-        // Check if the number of messages exceeds a certain threshold
-        const scrollThreshold = 50; // Adjust this value as needed
-        const behavior = messages.length > scrollThreshold ? 'auto' : 'smooth';
-        messagesEndRef.current?.scrollIntoView({ behavior });
+      // Check if the number of messages exceeds a certain threshold
+      const scrollThreshold = 50; // Adjust this value as needed
+      const behavior = messages.length > scrollThreshold ? 'auto' : 'smooth';
+      messagesEndRef.current?.scrollIntoView({ behavior });
     }
   }, [isAtBottom, messages.length]);
 
@@ -125,6 +129,8 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
   useEffect(() => {
     if (!chatUser) return;
     const chatId = [currentUser.uid, chatUser.userId].sort().join('_');
+    
+    // Fetch messages
     axios.get(`${getBackendUrl()}/api/messages/${chatId}`)
       .then(res => {
         // Sort messages by timestamp to ensure proper order (oldest to newest)
@@ -139,100 +145,104 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
       });
       
     // Set up WebSocket connection for real-time messages
-    const wsUrl = `${getBackendUrl()}/ws`;
-    
-    console.log('Connecting to WebSocket at:', wsUrl);
-    
-    const socket = new SockJS(wsUrl);
-    const client = new Client({
-      webSocketFactory: () => socket,
-      reconnectDelay: 5000,
-      debug: process.env.NODE_ENV === 'development' ? console.log : false
-    });
-    
-    client.onConnect = () => {
-      console.log('Connected to chat WebSocket');
+    try {
+      // Use the backend URL directly with the proper protocol
+      const wsUrl = `${getBackendUrl()}/ws`;
+      console.log('Connecting to WebSocket at:', wsUrl);
       
-      // Subscribe to messages for this specific chat
-      client.subscribe(`/topic/messages/${chatId}`, async (message) => {
-        try {
-          const receivedMessage = JSON.parse(message.body);
-          console.log('Received message via WebSocket:', receivedMessage);
-          
-          // Fetch latest language preference before processing new messages
-          let latestLanguage = contactLanguage;
-          try {
-            const userResponse = await axios.get(`${getBackendUrl()}/api/users/${chatUser.userId}`);
-            latestLanguage = userResponse.data.language;
-            
-            // Update contact language if needed
-            if (latestLanguage !== contactLanguage) {
-              setContactLanguage(latestLanguage);
-            }
-          } catch (error) {
-            console.error('Error fetching latest language:', error);
-          }
-          
-          // Process the message with the latest language preference
-          setMessages(prevMessages => {
-            // Check if we already have this message
-            const existingMessageIndex = prevMessages.findIndex(msg => msg.messageId === receivedMessage.messageId);
-            
-            // If new message needs translation (not from current user and has original content)
-            if (existingMessageIndex === -1 && 
-                receivedMessage.senderId !== currentUser.uid && 
-                receivedMessage.originalContent) {
-              
-              // Start translating immediately with latest language
-              translateToLanguage(
-                receivedMessage.originalContent,
-                latestLanguage,
-                currentUser.translator || 'google'
-              ).then(translation => {
-                // Update the translated message
-                setMessages(prev => 
-                  prev.map(msg => 
-                    msg.messageId === receivedMessage.messageId
-                      ? {...msg, content: translation}
-                      : msg
-                  )
-                );
-              }).catch(error => {
-                console.error('Error translating new message:', error);
-              });
-            }
-            
-            // If message doesn't exist, add it to the list
-            if (existingMessageIndex === -1) {
-              // If not at the bottom of chat, show new message notification
-              if (!isAtBottom && receivedMessage.senderId !== currentUser.uid) {
-                setHasNewMessages(true);
-              }
-              return [...prevMessages, receivedMessage];
-            }
-            
-            // Update an existing message (useful for reactions, status changes, etc)
-            const updatedMessages = [...prevMessages];
-            updatedMessages[existingMessageIndex] = receivedMessage;
-            return updatedMessages;
-          });
-        } catch (error) {
-          console.error('Error handling WebSocket message:', error);
-        }
+      const socket = new SockJS(wsUrl);
+      const client = new Client({
+        webSocketFactory: () => socket,
+        reconnectDelay: 5000,
+        debug: true // Enable full debug logging
       });
-    };
-    
-    client.onStompError = (frame) => {
-      console.error('STOMP error:', frame);
-    };
-    
-    client.onWebSocketError = (event) => {
-      console.error('WebSocket error:', event);
-    };
-    
-    // Activate WebSocket connection
-    client.activate();
-    stompClientRef.current = client;
+      
+      client.onConnect = () => {
+        console.log('Connected to chat WebSocket');
+        
+        // Subscribe to messages for this specific chat
+        client.subscribe(`/topic/messages/${chatId}`, async (message) => {
+          try {
+            const receivedMessage = JSON.parse(message.body);
+            console.log('Received message via WebSocket:', receivedMessage);
+            
+            // Fetch latest language preference before processing new messages
+            let latestLanguage = contactLanguage;
+            try {
+              const userResponse = await axios.get(`${getBackendUrl()}/api/users/${chatUser.userId}`);
+              latestLanguage = userResponse.data.language;
+              
+              // Update contact language if needed
+              if (latestLanguage !== contactLanguage) {
+                setContactLanguage(latestLanguage);
+              }
+            } catch (error) {
+              console.error('Error fetching latest language:', error);
+            }
+            
+            // Process the message with the latest language preference
+            setMessages(prevMessages => {
+              // Check if we already have this message
+              const existingMessageIndex = prevMessages.findIndex(msg => msg.messageId === receivedMessage.messageId);
+              
+              // If new message needs translation (not from current user and has original content)
+              if (existingMessageIndex === -1 && 
+                  receivedMessage.senderId !== currentUser.uid && 
+                  receivedMessage.originalContent) {
+                
+                // Start translating immediately with latest language
+                translateToLanguage(
+                  receivedMessage.originalContent,
+                  latestLanguage,
+                  currentUser.translator || 'google'
+                ).then(translation => {
+                  // Update the translated message
+                  setMessages(prev => 
+                    prev.map(msg => 
+                      msg.messageId === receivedMessage.messageId
+                        ? {...msg, content: translation}
+                        : msg
+                    )
+                  );
+                }).catch(error => {
+                  console.error('Error translating new message:', error);
+                });
+              }
+              
+              // If message doesn't exist, add it to the list
+              if (existingMessageIndex === -1) {
+                // If not at the bottom of chat, show new message notification
+                if (!isAtBottom && receivedMessage.senderId !== currentUser.uid) {
+                  setHasNewMessages(true);
+                }
+                return [...prevMessages, receivedMessage];
+              }
+              
+              // Update an existing message (useful for reactions, status changes, etc)
+              const updatedMessages = [...prevMessages];
+              updatedMessages[existingMessageIndex] = receivedMessage;
+              return updatedMessages;
+            });
+          } catch (error) {
+            console.error('Error handling WebSocket message:', error);
+          }
+        });
+      };
+      
+      client.onStompError = (frame) => {
+        console.error('STOMP error:', frame);
+      };
+      
+      client.onWebSocketError = (event) => {
+        console.error('WebSocket error:', event);
+      };
+      
+      // Activate WebSocket connection
+      client.activate();
+      stompClientRef.current = client;
+    } catch (error) {
+      console.error('Error initializing WebSocket:', error);
+    }
     
     // Clean up function
     return () => {
@@ -247,70 +257,73 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
     if (!chatUser) return;
     
     // Set up WebSocket connection for real-time user updates
-    const wsUrl = `${getBackendUrl()}/ws`;
-    
-    console.log('Connecting to user updates WebSocket at:', wsUrl);
-    
-    const userSocket = new SockJS(wsUrl);
-    const userClient = new Client({
-      webSocketFactory: () => userSocket,
-      reconnectDelay: 5000,
-      debug: process.env.NODE_ENV === 'development' ? console.log : false
-    });
-    
-    userClient.onConnect = () => {
-      console.log('Connected to user updates WebSocket');
+    try {
+      const wsUrl = `${getBackendUrl()}/ws`;
+      console.log('Connecting to user updates WebSocket at:', wsUrl);
       
-      // Subscribe to specific user updates
-      userClient.subscribe(`/topic/users/${chatUser.userId}`, (message) => {
-        try {
-          const updatedUser = JSON.parse(message.body);
-          console.log('Received user update via WebSocket:', updatedUser);
-          
-          // Update chat user's language if it changed
-          if (updatedUser.language && updatedUser.language !== contactLanguage) {
-            setContactLanguage(updatedUser.language);
-            setPreviousLanguage(contactLanguage);
+      const userSocket = new SockJS(wsUrl);
+      const userClient = new Client({
+        webSocketFactory: () => userSocket,
+        reconnectDelay: 5000,
+        debug: true
+      });
+      
+      userClient.onConnect = () => {
+        console.log('Connected to user updates WebSocket');
+        
+        // Subscribe to specific user updates
+        userClient.subscribe(`/topic/users/${chatUser.userId}`, (message) => {
+          try {
+            const updatedUser = JSON.parse(message.body);
+            console.log('Received user update via WebSocket:', updatedUser);
+            
+            // Update chat user's language if it changed
+            if (updatedUser.language && updatedUser.language !== contactLanguage) {
+              setContactLanguage(updatedUser.language);
+              setPreviousLanguage(contactLanguage);
+              setShowLanguageNotification(true);
+              setTimeout(() => setShowLanguageNotification(false), 5000);
+            }
+            // Update chat user's status in real-time
+            if (updatedUser.status) {
+              setChatUserStatus(updatedUser.status);
+            }
+          } catch (error) {
+            console.error('Error handling WebSocket message:', error);
+          }
+        });
+      };
+      
+      userClient.onStompError = (frame) => {
+        console.error('User updates STOMP error:', frame);
+      };
+      
+      userClient.onWebSocketError = (event) => {
+        console.error('User updates WebSocket error:', event);
+      };
+      
+      userClient.activate();
+      
+      // Always fetch the latest user data from the server
+      axios.get(`${getBackendUrl()}/api/users/${chatUser.userId}`)
+        .then(res => {
+          if (res.data.language !== contactLanguage) {
+            setContactLanguage(res.data.language);
+            setPreviousLanguage(chatUser.language);
             setShowLanguageNotification(true);
             setTimeout(() => setShowLanguageNotification(false), 5000);
           }
-          // Update chat user's status in real-time
-          if (updatedUser.status) {
-            setChatUserStatus(updatedUser.status);
-          }
-        } catch (error) {
-          console.error('Error handling WebSocket message:', error);
+        })
+        .catch(console.error);
+      
+      return () => {
+        if (userClient?.connected) {
+          userClient.deactivate();
         }
-      });
-    };
-    
-    userClient.onStompError = (frame) => {
-      console.error('User updates STOMP error:', frame);
-    };
-    
-    userClient.onWebSocketError = (event) => {
-      console.error('User updates WebSocket error:', event);
-    };
-    
-    userClient.activate();
-    
-    // Always fetch the latest user data from the server to ensure we have the most recent language setting
-    axios.get(`${getBackendUrl()}/api/users/${chatUser.userId}`)
-      .then(res => {
-        if (res.data.language !== contactLanguage) {
-          setContactLanguage(res.data.language);
-          setPreviousLanguage(chatUser.language);
-          setShowLanguageNotification(true);
-          setTimeout(() => setShowLanguageNotification(false), 5000);
-        }
-      })
-      .catch(console.error);
-    
-    return () => {
-      if (userClient?.connected) {
-        userClient.deactivate();
-      }
-    };
+      };
+    } catch (error) {
+      console.error('Error initializing user updates WebSocket:', error);
+    }
   }, [chatUser?.userId]); // Only re-run when the chat user changes
 
   useEffect(() => {
@@ -799,611 +812,612 @@ const ChatArea = ({ currentUser, chatUser, onClose, setUserStatuses }) => {
           <Typography variant="subtitle1" sx={{ fontWeight: 500, color: theme.palette.text.primary }}>
             {chatUser.username}
           </Typography>
-          <Typography variant="caption" sx={{ color: getStatusColor(chatUserStatus), display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            {getStatusText(chatUserStatus)}
-          </Typography>
-        </Box>
-        <Box sx={{ ml: 'auto' }}>
-          <IconButton onClick={onClose} sx={{ color: theme.palette.text.secondary }}>
-            <CloseIcon />
-          </IconButton>
-        </Box>
+          <Typography variant="caption" sx={{ color: getStatusColor(chatUserStatus), display: 'flex', alignItems: 'center',
+          gap: 0.5 }}>
+          {getStatusText(chatUserStatus)}
+        </Typography>
       </Box>
-      <Box ref={chatContainerRef} sx={{ 
-        flexGrow: 1,
-        overflowY: 'auto',
-        overflowX: 'hidden',
+      <Box sx={{ ml: 'auto' }}>
+        <IconButton onClick={onClose} sx={{ color: theme.palette.text.secondary }}>
+          <CloseIcon />
+        </IconButton>
+      </Box>
+    </Box>
+    <Box ref={chatContainerRef} sx={{ 
+      flexGrow: 1,
+      overflowY: 'auto',
+      overflowX: 'hidden',
+      background: theme.palette.mode === 'dark' 
+        ? 'linear-gradient(180deg, #29104A 0%, #522C5D 50%, #845162 100%)' 
+        : 'transparent',
+      p: 3,
+      maxHeight: replyingTo ? 'calc(100vh - 200px)' : 'calc(100vh - 160px)',
+      '&::-webkit-scrollbar': {
+        width: '8px',
+      },
+      '&::-webkit-scrollbar-track': {
+        background: 'transparent',
+      },
+      '&::-webkit-scrollbar-thumb': {
         background: theme.palette.mode === 'dark' 
-          ? 'linear-gradient(180deg, #29104A 0%, #522C5D 50%, #845162 100%)' 
-          : 'transparent',
-        p: 3,
-        maxHeight: replyingTo ? 'calc(100vh - 200px)' : 'calc(100vh - 160px)',
-        '&::-webkit-scrollbar': {
-          width: '8px',
-        },
-        '&::-webkit-scrollbar-track': {
-          background: 'transparent',
-        },
-        '&::-webkit-scrollbar-thumb': {
-          background: theme.palette.mode === 'dark' 
-            ? 'linear-gradient(180deg, #845162 0%, #E3B8B1 100%)' 
-            : 'rgba(126, 96, 191, 0.5)',
-          borderRadius: '4px',
-        },
-      }}>
-        {messages.map((msg, index) => {
-          const showAvatar = index === messages.length - 1 || messages[index + 1]?.senderId !== msg.senderId;
-          const isLastMessageFromContact = (index === messages.length - 1 || messages[index + 1]?.senderId !== msg.senderId) && msg.senderId !== currentUser.uid;
-          const isLastMessageFromCurrentUser = (index === messages.length - 1 || messages[index + 1]?.senderId !== msg.senderId) && msg.senderId === currentUser.uid;
-          const isCurrentUserMessage = msg.senderId === currentUser.uid;
-          const messageToDisplay = isCurrentUserMessage ? msg.messageOG : (msg.message || msg.messageOG);
-          const isTranslating = !isCurrentUserMessage && msg.message === "Translating...";
-          const messageReactions = msg.reactions ? Object.values(msg.reactions) : [];
+          ? 'linear-gradient(180deg, #845162 0%, #E3B8B1 100%)' 
+          : 'rgba(126, 96, 191, 0.5)',
+        borderRadius: '4px',
+      },
+    }}>
+      {messages.map((msg, index) => {
+        const showAvatar = index === messages.length - 1 || messages[index + 1]?.senderId !== msg.senderId;
+        const isLastMessageFromContact = (index === messages.length - 1 || messages[index + 1]?.senderId !== msg.senderId) && msg.senderId !== currentUser.uid;
+        const isLastMessageFromCurrentUser = (index === messages.length - 1 || messages[index + 1]?.senderId !== msg.senderId) && msg.senderId === currentUser.uid;
+        const isCurrentUserMessage = msg.senderId === currentUser.uid;
+        const messageToDisplay = isCurrentUserMessage ? msg.messageOG : (msg.message || msg.messageOG);
+        const isTranslating = !isCurrentUserMessage && msg.message === "Translating...";
+        const messageReactions = msg.reactions ? Object.values(msg.reactions) : [];
 
-          return (
-            <Grid
-              container
-              spacing={2}
-              key={index}
-              ref={el => messageRefs.current[msg.messageId] = el}
-              justifyContent={isCurrentUserMessage ? 'flex-end' : 'flex-start'}
-              alignItems="flex-end"
+        return (
+          <Grid
+            container
+            spacing={2}
+            key={index}
+            ref={el => messageRefs.current[msg.messageId] = el}
+            justifyContent={isCurrentUserMessage ? 'flex-end' : 'flex-start'}
+            alignItems="flex-end"
+            sx={{ 
+              mb: 2, 
+              position: 'relative',
+            }}
+            onMouseEnter={() => handleMouseEnter(msg.messageId)}
+            onMouseLeave={handleMouseLeave}
+          >
+            {!isCurrentUserMessage && (
+              <Grid item sx={{ width: 40, visibility: showAvatar ? 'visible' : 'hidden' }}>
+                {showAvatar && (
+                  <Avatar 
+                    src={chatUser.profileImageUrl} 
+                    sx={{ width: 32, height: 32 }}
+                  />
+                )}
+              </Grid>
+            )}
+            <Grid 
+              item 
+              xs="auto"
               sx={{ 
-                mb: 2, 
-                position: 'relative',
+                maxWidth: { xs: 'calc(100% - 48px)', sm: 'calc(60% - 48px)', md: 'calc(50% - 48px)' },
+                minWidth: '50px',
+                position: 'relative'
               }}
-              onMouseEnter={() => handleMouseEnter(msg.messageId)}
-              onMouseLeave={handleMouseLeave}
             >
-              {!isCurrentUserMessage && (
-                <Grid item sx={{ width: 40, visibility: showAvatar ? 'visible' : 'hidden' }}>
-                  {showAvatar && (
-                    <Avatar 
-                      src={chatUser.profileImageUrl} 
-                      sx={{ width: 32, height: 32 }}
-                    />
-                  )}
-                </Grid>
-              )}
-              <Grid 
-                item 
-                xs="auto"
-                sx={{ 
-                  maxWidth: { xs: 'calc(100% - 48px)', sm: 'calc(60% - 48px)', md: 'calc(50% - 48px)' },
-                  minWidth: '50px',
-                  position: 'relative'
+              <Box
+                id={`message-${msg.messageId}`}
+                sx={{
+                  px: 2,
+                  py: 1.5,
+                  backgroundColor: isCurrentUserMessage
+                    ? theme.palette.mode === 'dark'
+                      ? 'rgba(82, 44, 93, 0.85)'
+                      : theme.palette.primary.main
+                    : theme.palette.mode === 'dark'
+                      ? 'rgba(132, 81, 98, 0.75)'
+                      : '#E5D9F2',
+                  color: isCurrentUserMessage 
+                    ? '#fff' 
+                    : theme.palette.text.primary,
+                  borderRadius: '16px',
+                  backdropFilter: 'blur(8px)',
+                  WebkitBackdropFilter: 'blur(8px)',
+                  boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
+                  position: 'relative',
+                  wordWrap: 'break-word',
+                  maxWidth: '100%',
+                  display: 'inline-block',
+                  transition: 'all 0.3s ease-in-out',
+                  overflowWrap: 'break-word',
+                  wordBreak: 'break-word',
+                  hyphens: 'auto',
+                  animation: highlightedMessageId === msg.messageId ? `${pulseAnimation} 5s ease-in-out` : 'none',
+                  '&:before': (!isCurrentUserMessage && isLastMessageFromContact) ? {
+                    content: '""',
+                    position: 'absolute',
+                    bottom: 8,
+                    left: -6,
+                    width: 0,
+                    height: 0,
+                    borderTop: '8px solid transparent',
+                    borderRight: theme.palette.mode === 'dark' 
+                      ? `8px solid rgba(132, 81, 98, 0.75)`
+                      : `8px solid #E5D9F2`,
+                    borderBottom: '8px solid transparent',
+                  } : (isCurrentUserMessage && isLastMessageFromCurrentUser) ? {
+                    content: '""',
+                    position: 'absolute',
+                    bottom: -8,
+                    right: 10,
+                    width: 0,
+                    height: 0,
+                    borderTop: theme.palette.mode === 'dark'
+                      ? `9px solid rgba(82, 44, 93, 0.85)`
+                      : `9px solid ${theme.palette.primary.main}`,
+                    borderLeft: '8px solid transparent',
+                    borderRight: '8px solid transparent',
+                  } : undefined,
                 }}
+                onClick={(e) => handleMessageClick(e, msg)}
               >
-                <Box
-                  id={`message-${msg.messageId}`}
-                  sx={{
-                    px: 2,
-                    py: 1.5,
-                    backgroundColor: isCurrentUserMessage
-                      ? theme.palette.mode === 'dark'
-                        ? 'rgba(82, 44, 93, 0.85)'
-                        : theme.palette.primary.main
-                      : theme.palette.mode === 'dark'
-                        ? 'rgba(132, 81, 98, 0.75)'
-                        : '#E5D9F2',
-                    color: isCurrentUserMessage 
-                      ? '#fff' 
-                      : theme.palette.text.primary,
-                    borderRadius: '16px',
-                    backdropFilter: 'blur(8px)',
-                    WebkitBackdropFilter: 'blur(8px)',
-                    boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
-                    position: 'relative',
-                    wordWrap: 'break-word',
-                    maxWidth: '100%',
-                    display: 'inline-block',
-                    transition: 'all 0.3s ease-in-out',
-                    overflowWrap: 'break-word',
-                    wordBreak: 'break-word',
-                    hyphens: 'auto',
-                    animation: highlightedMessageId === msg.messageId ? `${pulseAnimation} 5s ease-in-out` : 'none',
-                    '&:before': (!isCurrentUserMessage && isLastMessageFromContact) ? {
-                      content: '""',
-                      position: 'absolute',
-                      bottom: 8,
-                      left: -6,
-                      width: 0,
-                      height: 0,
-                      borderTop: '8px solid transparent',
-                      borderRight: theme.palette.mode === 'dark' 
-                        ? `8px solid rgba(132, 81, 98, 0.75)`
-                        : `8px solid #E5D9F2`,
-                      borderBottom: '8px solid transparent',
-                    } : (isCurrentUserMessage && isLastMessageFromCurrentUser) ? {
-                      content: '""',
-                      position: 'absolute',
-                      bottom: -8,
-                      right: 10,
-                      width: 0,
-                      height: 0,
-                      borderTop: theme.palette.mode === 'dark'
-                        ? `9px solid rgba(82, 44, 93, 0.85)`
-                        : `9px solid ${theme.palette.primary.main}`,
-                      borderLeft: '8px solid transparent',
-                      borderRight: '8px solid transparent',
-                    } : undefined,
-                  }}
-                  onClick={(e) => handleMessageClick(e, msg)}
-                >
-                  {msg.replyToMessageId && (
-                    <Box 
-                      sx={{ 
-                        backgroundColor: 'rgba(0, 0, 0, 0.05)', 
-                        borderLeft: '3px solid #AD49E1', 
-                        padding: '4px 8px', 
-                        marginBottom: '4px', 
-                        borderRadius: '4px',
-                        fontSize: '0.8rem',
+                {msg.replyToMessageId && (
+                  <Box 
+                    sx={{ 
+                      backgroundColor: 'rgba(0, 0, 0, 0.05)', 
+                      borderLeft: '3px solid #AD49E1', 
+                      padding: '4px 8px', 
+                      marginBottom: '4px', 
+                      borderRadius: '4px',
+                      fontSize: '0.8rem',
+                      cursor: 'pointer',
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleReplyClick(msg.replyToMessageId);
+                    }}
+                  >
+                    <Typography variant="caption" sx={{ fontWeight: 'bold' }}>
+                      {msg.replyToSenderId === currentUser.uid ? 'You' : chatUser.username}
+                    </Typography>
+                    <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary' }}>
+                      {msg.replyToType === 'image' ? 'Photo' : msg.replyToMessage}
+                    </Typography>
+                  </Box>
+                )}
+                {regeneratingTranslation === msg.messageId ? (
+                  <TranslationAnimation />
+                ) : isTranslating ? (
+                  <TranslationAnimation />
+                ) : (
+                  msg.type === 'image' ? (
+                    <Box
+                      component="img"
+                      src={msg.imageUrl}
+                      alt="Chat image"
+                      sx={{
+                        maxWidth: '100%',
+                        maxHeight: '300px',
+                        borderRadius: '8px',
                         cursor: 'pointer',
+                        '&:hover': {
+                          opacity: 0.9,
+                        },
                       }}
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleReplyClick(msg.replyToMessageId);
+                        handleImagePreview(msg.imageUrl);
                       }}
-                    >
-                      <Typography variant="caption" sx={{ fontWeight: 'bold' }}>
-                        {msg.replyToSenderId === currentUser.uid ? 'You' : chatUser.username}
-                      </Typography>
-                      <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary' }}>
-                        {msg.replyToType === 'image' ? 'Photo' : msg.replyToMessage}
-                      </Typography>
-                    </Box>
-                  )}
-                  {regeneratingTranslation === msg.messageId ? (
-                    <TranslationAnimation />
-                  ) : isTranslating ? (
-                    <TranslationAnimation />
+                    />
                   ) : (
-                    msg.type === 'image' ? (
-                      <Box
-                        component="img"
-                        src={msg.imageUrl}
-                        alt="Chat image"
-                        sx={{
-                          maxWidth: '100%',
-                          maxHeight: '300px',
-                          borderRadius: '8px',
-                          cursor: 'pointer',
-                          '&:hover': {
-                            opacity: 0.9,
-                          },
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleImagePreview(msg.imageUrl);
-                        }}
-                      />
-                    ) : (
-                      <Typography variant="body1" sx={{ wordBreak: 'break-word' }}>
-                        {messageToDisplay}
-                      </Typography>
-                    )
-                  )}
-                  <Typography 
-                    variant="caption" 
-                    sx={{ 
-                      display: 'block', 
-                      mt: 0.5,
-                      color: 'rgba(0, 0, 0, 0.6)',
-                      maxHeight: showOriginalFor === msg.messageId ? '100px' : '0px',
-                      opacity: showOriginalFor === msg.messageId ? 1 : 0,
-                      overflow: 'hidden',
-                      transition: 'all 0.3s ease-in-out',
-                    }}
-                  >
-                    {msg.messageOG}
-                  </Typography>
-                </Box>
-
-                <MessageReactions
-                  messageReactions={msg.reactions ? Object.values(msg.reactions) : []}
-                  messageId={msg.messageId}
-                  currentUser={currentUser}
-                  chatUser={chatUser}
-                  groupId={[currentUser.uid, chatUser.userId].sort().join('_')}
-                  isCurrentUserMessage={isCurrentUserMessage}
-                  reactionAnchorEl={reactionAnchorEl}
-                  selectedMessageForReaction={selectedMessageForReaction}
-                  onCloseReactionMenu={() => {
-                    setSelectedMessageForReaction(null);
-                    setReactionAnchorEl(null);
-                  }}
-                  onReactionClick={handleReactionClick}
-                />
-
+                    <Typography variant="body1" sx={{ wordBreak: 'break-word' }}>
+                      {messageToDisplay}
+                    </Typography>
+                  )
+                )}
                 <Typography 
                   variant="caption" 
                   sx={{ 
-                    position: 'absolute',
-                    [isCurrentUserMessage ? 'left' : 'right']: '-90px',
-                    bottom: 0,
-                    whiteSpace: 'nowrap',
-                    color: 'rgba(0, 0, 0, 0.7)',
-                    opacity: hoveredMessageId === msg.messageId ? 1 : 0,
-                    visibility: hoveredMessageId === msg.messageId ? 'visible' : 'hidden',
-                    transition: 'opacity 0.3s ease-in-out, visibility 0.3s ease-in-out',
-                    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-                    padding: '2px 6px',
-                    borderRadius: '4px',
-                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-                    fontSize: '0.75rem',
+                    display: 'block', 
+                    mt: 0.5,
+                    color: 'rgba(0, 0, 0, 0.6)',
+                    maxHeight: showOriginalFor === msg.messageId ? '100px' : '0px',
+                    opacity: showOriginalFor === msg.messageId ? 1 : 0,
+                    overflow: 'hidden',
+                    transition: 'all 0.3s ease-in-out',
                   }}
                 >
-                  {msg.timestamp ? formatTimestamp(msg.timestamp) : 'Sending...'}
+                  {msg.messageOG}
                 </Typography>
-                <IconButton
-                  size="small"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleReply(msg);
-                  }}
-                  sx={{
-                    position: 'absolute',
-                    top: '50%',
-                    [isCurrentUserMessage ? 'left' : 'right']: '-28px',
-                    transform: 'translateY(-50%)',
-                    opacity: hoveredMessageId === msg.messageId ? 1 : 0,
-                    transition: 'opacity 0.2s',
-                  }}
-                >
-                  <ReplyIcon fontSize="small" />
-                </IconButton>
-              </Grid>
+              </Box>
+
+              <MessageReactions
+                messageReactions={msg.reactions ? Object.values(msg.reactions) : []}
+                messageId={msg.messageId}
+                currentUser={currentUser}
+                chatUser={chatUser}
+                groupId={[currentUser.uid, chatUser.userId].sort().join('_')}
+                isCurrentUserMessage={isCurrentUserMessage}
+                reactionAnchorEl={reactionAnchorEl}
+                selectedMessageForReaction={selectedMessageForReaction}
+                onCloseReactionMenu={() => {
+                  setSelectedMessageForReaction(null);
+                  setReactionAnchorEl(null);
+                }}
+                onReactionClick={handleReactionClick}
+              />
+
+              <Typography 
+                variant="caption" 
+                sx={{ 
+                  position: 'absolute',
+                  [isCurrentUserMessage ? 'left' : 'right']: '-90px',
+                  bottom: 0,
+                  whiteSpace: 'nowrap',
+                  color: 'rgba(0, 0, 0, 0.7)',
+                  opacity: hoveredMessageId === msg.messageId ? 1 : 0,
+                  visibility: hoveredMessageId === msg.messageId ? 'visible' : 'hidden',
+                  transition: 'opacity 0.3s ease-in-out, visibility 0.3s ease-in-out',
+                  backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+                  fontSize: '0.75rem',
+                }}
+              >
+                {msg.timestamp ? formatTimestamp(msg.timestamp) : 'Sending...'}
+              </Typography>
+              <IconButton
+                size="small"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleReply(msg);
+                }}
+                sx={{
+                  position: 'absolute',
+                  top: '50%',
+                  [isCurrentUserMessage ? 'left' : 'right']: '-28px',
+                  transform: 'translateY(-50%)',
+                  opacity: hoveredMessageId === msg.messageId ? 1 : 0,
+                  transition: 'opacity 0.2s',
+                }}
+              >
+                <ReplyIcon fontSize="small" />
+              </IconButton>
             </Grid>
-          );
-        })}
+          </Grid>
+        );
+      })}
 
-        <div ref={messagesEndRef} />
-      </Box>
+      <div ref={messagesEndRef} />
+    </Box>
 
-      {isScrolledAway && (
-        <Fab
-          color="primary"
-          variant={hasNewMessages ? "extended" : "circular"}
-          size={hasNewMessages ? "medium" : "small"}
-          onClick={handleScrollToBottom}
-          sx={{
-            position: 'absolute',
-            bottom: 80,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            backgroundColor: '#8967B3',
-            '&:hover': { backgroundColor: '#7A1CAC' },
-            zIndex: 1000,
-            boxShadow: '0px 3px 5px -1px rgba(0,0,0,0.2), 0px 6px 10px 0px rgba(0,0,0,0.14), 0px 1px 18px 0px rgba(0,0,0,0.12)',
-          }}
-        >
-          <KeyboardArrowDownIcon sx={{ mr: hasNewMessages ? 1 : 0 }} />
-          {hasNewMessages && "New Messages"}
-        </Fab>
-      )}
-
-      <Menu
-        anchorEl={anchorEl}
-        open={Boolean(anchorEl)}
-        onClose={handleCloseMenu}
-        anchorOrigin={{
-          vertical: 'top',
-          horizontal: 'left',
-        }}
-        transformOrigin={{
-          vertical: 'center',
-          horizontal: 'left',
-        }}
+    {isScrolledAway && (
+      <Fab
+        color="primary"
+        variant={hasNewMessages ? "extended" : "circular"}
+        size={hasNewMessages ? "medium" : "small"}
+        onClick={handleScrollToBottom}
         sx={{
-          '& .MuiPaper-root': {
-            backgroundColor: theme.palette.mode === 'dark' 
-              ? '#2f3136' 
-              : '#CDC1FF',
-            borderRadius: 2,
-            boxShadow: '0px 3px 8px rgba(0, 0, 0, 0.2)',
-            minWidth: 180,
-            border: `1px solid ${theme.palette.divider}`,
-          },
+          position: 'absolute',
+          bottom: 80,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          backgroundColor: '#8967B3',
+          '&:hover': { backgroundColor: '#7A1CAC' },
+          zIndex: 1000,
+          boxShadow: '0px 3px 5px -1px rgba(0,0,0,0.2), 0px 6px 10px 0px rgba(0,0,0,0.14), 0px 1px 18px 0px rgba(0,0,0,0.12)',
         }}
       >
-        <MenuItem
-          onClick={() => {
-            const message = messages.find(msg => msg.messageId === selectedMessageId);
-            if (message) {
-              handleReply(message);
-              handleCloseMenu();
-            }
-          }}
-          sx={{
-            fontSize: '14px',
-            padding: '8px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1,
-            '&:hover': {
-              backgroundColor: '#FFE1FF',
-            },
-          }}
-        >
-          <ReplyIcon fontSize="small" />
-          Reply
-        </MenuItem>
-        {messages.find(msg => msg.messageId === selectedMessageId)?.messageVar2 && (
-          <MenuItem
-            onClick={() => handleMenuOption('regenerate', selectedMessageId)}
-            sx={{
-              fontSize: '14px',
-              padding: '8px 16px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1,
-              '&:hover': {
-                backgroundColor: '#FFE1FF',
-              },
-            }}
-          >
-            <AutorenewIcon fontSize="small" />
-            Regenerate Translation
-          </MenuItem>
-        )}
-        <MenuItem
-          onClick={() => handleMenuOption('toggleOriginal', selectedMessageId)}
-          sx={{
-            fontSize: '14px',
-            padding: '8px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1,
-            '&:hover': {
-              backgroundColor: '#FFE1FF',
-            },
-          }}
-        >
-          <TranslateIcon fontSize="small" />
-          {showOriginalFor === selectedMessageId ? 'Hide Original Message' : 'Show Original Message'}
-        </MenuItem>
-        <MenuItem
-          onClick={() => handleReactionClick(selectedMessageId)}
-          sx={{
-            fontSize: '14px',
-            padding: '8px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1,
-            '&:hover': {
-              backgroundColor: '#FFE1FF',
-            },
-          }}
-        >
-          <AddReactionIcon fontSize="small" />
-          Add Reaction
-        </MenuItem>
-      </Menu>
+        <KeyboardArrowDownIcon sx={{ mr: hasNewMessages ? 1 : 0 }} />
+        {hasNewMessages && "New Messages"}
+      </Fab>
+    )}
 
-      <Box sx={{
-        p: 2,
-        background: theme.palette.mode === 'dark' 
-          ? 'linear-gradient(180deg, #522C5D 0%, #29104A 100%)' 
-          : 'rgba(255, 255, 255, 0.85)',
-        borderTop: '1px solid',
-        borderColor: theme.palette.mode === 'dark' 
-          ? '#522C5D' 
-          : 'rgba(255, 255, 255, 0.2)',
-        boxShadow: theme.palette.mode === 'dark' 
-          ? '0 -2px 8px rgba(21, 0, 22, 0.2)'
-          : '0 -2px 8px rgba(0, 0, 0, 0.05)',
-        backdropFilter: 'blur(10px)',
-        position: 'relative',
-        zIndex: 1,
-        minHeight: replyingTo ? '120px' : '80px',
-      }}>
-        {replyingTo && (
-          <Box sx={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            backgroundColor: theme.palette.mode === 'dark' 
-              ? 'rgba(255, 255, 255, 0.05)' 
-              : '#f0f4f8', 
-            padding: '8px', 
-            borderRadius: '4px', 
-            marginBottom: '8px'
-          }}>
-            <Typography variant="body2" sx={{ flexGrow: 1, marginRight: '8px' }}>
-              Replying to: {replyingTo.type === 'image' ? 'Photo' : replyingTo.message}
-            </Typography>
-            <IconButton size="small" onClick={handleCancelReply}>
-              <CloseIcon fontSize="small" />
-            </IconButton>
-          </Box>
-        )}
-        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-          <input
-            type="file"
-            accept="image/*"
-            style={{ display: 'none' }}
-            ref={fileInputRef}
-            onChange={handleImageSelect}
-          />
-          <IconButton
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isUploadingImage}
-            sx={{
-              mr: 1,
-              color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'inherit',
-            }}
-          >
-            {isUploadingImage ? (
-              <CircularProgress size={24} />
-            ) : (
-              <ImageIcon />
-            )}
-          </IconButton>
-          <TextField
-            fullWidth
-            variant="outlined"
-            placeholder="Type your message..."
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
-            disabled={isSending}
-            sx={{
-              borderRadius: 2,
-              backgroundColor: theme.palette.mode === 'dark' 
-                ? 'rgba(255, 255, 255, 0.05)' 
-                : '#f5f7fb',
-              mr: 2,
-              '& .MuiOutlinedInput-root': {
-                color: 'text.primary',
-                '& fieldset': {
-                  borderColor: theme.palette.mode === 'dark' 
-                    ? 'rgba(255, 255, 255, 0.2)' 
-                    : '#ddd',
-                },
-                '&:hover fieldset': {
-                  borderColor: theme.palette.primary.main,
-                },
-                '&.Mui-focused fieldset': {
-                  borderColor: theme.palette.primary.main,
-                },
-              },
-              '& .MuiInputBase-input::placeholder': {
-                color: theme.palette.text.secondary,
-                opacity: theme.palette.mode === 'dark' ? 0.5 : 0.7,
-              },
-            }}
-          />
-          <IconButton 
-            color="primary" 
-            onClick={handleSendMessage}
-            disabled={isSending || newMessage.trim() === ''}
-            sx={{ 
-              backgroundColor: theme.palette.primary.main, 
-              color: '#fff',
-              '&:hover': { 
-                backgroundColor: theme.palette.primary.dark 
-              },
-              '&.Mui-disabled': { 
-                backgroundColor: theme.palette.mode === 'dark' 
-                  ? 'rgba(255, 255, 255, 0.12)' 
-                  : '#ccc' 
-              },
-            }}
-          >
-            {isSending ? <CircularProgress size={24} color="inherit" /> : <SendIcon />}
-          </IconButton>
-        </Box>
-      </Box>
-
-      <Snackbar
-        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-        open={showLanguageNotification}
-        autoHideDuration={3000}
-        onClose={() => setShowLanguageNotification(false)}
-        message={`${chatUser.username} has updated their language to ${contactLanguage}`}
-        ContentProps={{
-          sx: {
-            backgroundColor: theme.palette.background.paper,
-            color: theme.palette.text.primary,
+    <Menu
+      anchorEl={anchorEl}
+      open={Boolean(anchorEl)}
+      onClose={handleCloseMenu}
+      anchorOrigin={{
+        vertical: 'top',
+        horizontal: 'left',
+      }}
+      transformOrigin={{
+        vertical: 'center',
+        horizontal: 'left',
+      }}
+      sx={{
+        '& .MuiPaper-root': {
+          backgroundColor: theme.palette.mode === 'dark' 
+            ? '#2f3136' 
+            : '#CDC1FF',
+          borderRadius: 2,
+          boxShadow: '0px 3px 8px rgba(0, 0, 0, 0.2)',
+          minWidth: 180,
+          border: `1px solid ${theme.palette.divider}`,
+        },
+      }}
+    >
+      <MenuItem
+        onClick={() => {
+          const message = messages.find(msg => msg.messageId === selectedMessageId);
+          if (message) {
+            handleReply(message);
+            handleCloseMenu();
           }
         }}
-      />
-
-      <UserInfoModal
-        user={chatUser}
-        open={isUserInfoModalOpen}
-        onClose={() => setIsUserInfoModalOpen(false)}
-      />
-
-      <Dialog
-        open={Boolean(previewImage)}
-        onClose={handleClosePreview}
-        maxWidth={false}
         sx={{
-          '& .MuiDialog-paper': {
-            backgroundColor: 'transparent',
-            boxShadow: 'none',
-            margin: 0,
-            maxHeight: '100vh',
-            maxWidth: '100vw',
-            width: '100%',
-            height: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+          fontSize: '14px',
+          padding: '8px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          '&:hover': {
+            backgroundColor: '#FFE1FF',
           },
         }}
       >
-        <DialogContent
+        <ReplyIcon fontSize="small" />
+        Reply
+      </MenuItem>
+      {messages.find(msg => msg.messageId === selectedMessageId)?.messageVar2 && (
+        <MenuItem
+          onClick={() => handleMenuOption('regenerate', selectedMessageId)}
           sx={{
-            position: 'relative',
-            p: 0,
-            '&::-webkit-scrollbar': {
-              display: 'none',
-            },
-            backgroundColor: 'transparent',
+            fontSize: '14px',
+            padding: '8px 16px',
             display: 'flex',
-            flexDirection: 'column',
             alignItems: 'center',
-            justifyContent: 'center',
-            height: '100%',
+            gap: 1,
+            '&:hover': {
+              backgroundColor: '#FFE1FF',
+            },
           }}
-          onClick={handleClosePreview}
         >
-          <Box
-            sx={{
-              position: 'fixed',
-              top: 16,
-              right: 16,
-              zIndex: 2,
-              display: 'flex',
-              gap: 1,
-              backgroundColor: 'rgba(0, 0, 0, 0.5)',
-              borderRadius: '20px',
-              padding: '4px',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <IconButton
-              size="small"
-              onClick={handleZoomIn}
-              sx={{ color: 'white' }}
-            >
-              <ZoomInIcon />
-            </IconButton>
-            <IconButton
-              size="small"
-              onClick={handleZoomOut}
-              sx={{ color: 'white' }}
-            >
-              <ZoomOutIcon />
-            </IconButton>
-            <IconButton
-              size="small"
-              onClick={handleClosePreview}
-              sx={{ color: 'white' }}
-            >
-              <CloseIcon />
-            </IconButton>
-          </Box>
-          <Box
-            component="img"
-            src={previewImage}
-            alt="Preview"
-            onClick={(e) => e.stopPropagation()}
-            sx={{
-              maxWidth: '90vw',
-              maxHeight: '90vh',
-              objectFit: 'contain',
-              transform: `scale(${imageZoom})`,
-              transition: 'transform 0.2s ease-in-out',
-              cursor: 'default',
-            }}
-          />
-        </DialogContent>
-      </Dialog>
+          <AutorenewIcon fontSize="small" />
+          Regenerate Translation
+        </MenuItem>
+      )}
+      <MenuItem
+        onClick={() => handleMenuOption('toggleOriginal', selectedMessageId)}
+        sx={{
+          fontSize: '14px',
+          padding: '8px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          '&:hover': {
+            backgroundColor: '#FFE1FF',
+          },
+        }}
+      >
+        <TranslateIcon fontSize="small" />
+        {showOriginalFor === selectedMessageId ? 'Hide Original Message' : 'Show Original Message'}
+      </MenuItem>
+      <MenuItem
+        onClick={() => handleReactionClick(selectedMessageId)}
+        sx={{
+          fontSize: '14px',
+          padding: '8px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          '&:hover': {
+            backgroundColor: '#FFE1FF',
+          },
+        }}
+      >
+        <AddReactionIcon fontSize="small" />
+        Add Reaction
+      </MenuItem>
+    </Menu>
+
+    <Box sx={{
+      p: 2,
+      background: theme.palette.mode === 'dark' 
+        ? 'linear-gradient(180deg, #522C5D 0%, #29104A 100%)' 
+        : 'rgba(255, 255, 255, 0.85)',
+      borderTop: '1px solid',
+      borderColor: theme.palette.mode === 'dark' 
+        ? '#522C5D' 
+        : 'rgba(255, 255, 255, 0.2)',
+      boxShadow: theme.palette.mode === 'dark' 
+        ? '0 -2px 8px rgba(21, 0, 22, 0.2)'
+        : '0 -2px 8px rgba(0, 0, 0, 0.05)',
+      backdropFilter: 'blur(10px)',
+      position: 'relative',
+      zIndex: 1,
+      minHeight: replyingTo ? '120px' : '80px',
+    }}>
+      {replyingTo && (
+        <Box sx={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          backgroundColor: theme.palette.mode === 'dark' 
+            ? 'rgba(255, 255, 255, 0.05)' 
+            : '#f0f4f8', 
+          padding: '8px', 
+          borderRadius: '4px', 
+          marginBottom: '8px'
+        }}>
+          <Typography variant="body2" sx={{ flexGrow: 1, marginRight: '8px' }}>
+            Replying to: {replyingTo.type === 'image' ? 'Photo' : replyingTo.message}
+          </Typography>
+          <IconButton size="small" onClick={handleCancelReply}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </Box>
+      )}
+      <Box sx={{ display: 'flex', alignItems: 'center' }}>
+        <input
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          ref={fileInputRef}
+          onChange={handleImageSelect}
+        />
+        <IconButton
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isUploadingImage}
+          sx={{
+            mr: 1,
+            color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'inherit',
+          }}
+        >
+          {isUploadingImage ? (
+            <CircularProgress size={24} />
+          ) : (
+            <ImageIcon />
+          )}
+        </IconButton>
+        <TextField
+          fullWidth
+          variant="outlined"
+          placeholder="Type your message..."
+          value={newMessage}
+          onChange={(e) => setNewMessage(e.target.value)}
+          onKeyPress={handleKeyPress}
+          disabled={isSending}
+          sx={{
+            borderRadius: 2,
+            backgroundColor: theme.palette.mode === 'dark' 
+              ? 'rgba(255, 255, 255, 0.05)' 
+              : '#f5f7fb',
+            mr: 2,
+            '& .MuiOutlinedInput-root': {
+              color: 'text.primary',
+              '& fieldset': {
+                borderColor: theme.palette.mode === 'dark' 
+                  ? 'rgba(255, 255, 255, 0.2)' 
+                  : '#ddd',
+              },
+              '&:hover fieldset': {
+                borderColor: theme.palette.primary.main,
+              },
+              '&.Mui-focused fieldset': {
+                borderColor: theme.palette.primary.main,
+              },
+            },
+            '& .MuiInputBase-input::placeholder': {
+              color: theme.palette.text.secondary,
+              opacity: theme.palette.mode === 'dark' ? 0.5 : 0.7,
+            },
+          }}
+        />
+        <IconButton 
+          color="primary" 
+          onClick={handleSendMessage}
+          disabled={isSending || newMessage.trim() === ''}
+          sx={{ 
+            backgroundColor: theme.palette.primary.main, 
+            color: '#fff',
+            '&:hover': { 
+              backgroundColor: theme.palette.primary.dark 
+            },
+            '&.Mui-disabled': { 
+              backgroundColor: theme.palette.mode === 'dark' 
+                ? 'rgba(255, 255, 255, 0.12)' 
+                : '#ccc' 
+            },
+          }}
+        >
+          {isSending ? <CircularProgress size={24} color="inherit" /> : <SendIcon />}
+        </IconButton>
+      </Box>
     </Box>
-  );
+
+    <Snackbar
+      anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      open={showLanguageNotification}
+      autoHideDuration={3000}
+      onClose={() => setShowLanguageNotification(false)}
+      message={`${chatUser.username} has updated their language to ${contactLanguage}`}
+      ContentProps={{
+        sx: {
+          backgroundColor: theme.palette.background.paper,
+          color: theme.palette.text.primary,
+        }
+      }}
+    />
+
+    <UserInfoModal
+      user={chatUser}
+      open={isUserInfoModalOpen}
+      onClose={() => setIsUserInfoModalOpen(false)}
+    />
+
+    <Dialog
+      open={Boolean(previewImage)}
+      onClose={handleClosePreview}
+      maxWidth={false}
+      sx={{
+        '& .MuiDialog-paper': {
+          backgroundColor: 'transparent',
+          boxShadow: 'none',
+          margin: 0,
+          maxHeight: '100vh',
+          maxWidth: '100vw',
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+      }}
+    >
+      <DialogContent
+        sx={{
+          position: 'relative',
+          p: 0,
+          '&::-webkit-scrollbar': {
+            display: 'none',
+          },
+          backgroundColor: 'transparent',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100%',
+        }}
+        onClick={handleClosePreview}
+      >
+        <Box
+          sx={{
+            position: 'fixed',
+            top: 16,
+            right: 16,
+            zIndex: 2,
+            display: 'flex',
+            gap: 1,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            borderRadius: '20px',
+            padding: '4px',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <IconButton
+            size="small"
+            onClick={handleZoomIn}
+            sx={{ color: 'white' }}
+          >
+            <ZoomInIcon />
+          </IconButton>
+          <IconButton
+            size="small"
+            onClick={handleZoomOut}
+            sx={{ color: 'white' }}
+          >
+            <ZoomOutIcon />
+          </IconButton>
+          <IconButton
+            size="small"
+            onClick={handleClosePreview}
+            sx={{ color: 'white' }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </Box>
+        <Box
+          component="img"
+          src={previewImage}
+          alt="Preview"
+          onClick={(e) => e.stopPropagation()}
+          sx={{
+            maxWidth: '90vw',
+            maxHeight: '90vh',
+            objectFit: 'contain',
+            transform: `scale(${imageZoom})`,
+            transition: 'transform 0.2s ease-in-out',
+            cursor: 'default',
+          }}
+        />
+      </DialogContent>
+    </Dialog>
+  </Box>
+);
 };
 
 export default React.memo(ChatArea);
