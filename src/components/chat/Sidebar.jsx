@@ -504,6 +504,19 @@ const Sidebar = ({ currentUser, selectChatUser, handleLogout, activeChatUserId }
     }
   };
 
+  // Function to handle group creation success
+  const handleGroupCreated = () => {
+    console.log("Group created successfully, refreshing sidebar data");
+    
+    // Use the stored reference to fetch sidebar data
+    if (fetchSidebarDataRef.current) {
+      fetchSidebarDataRef.current();
+    }
+    
+    // After creating a group, switch to the groups view
+    setView('groups');
+  };
+
   return (
     <Box sx={{ 
       height: '100vh',
@@ -894,6 +907,7 @@ const Sidebar = ({ currentUser, selectChatUser, handleLogout, activeChatUserId }
         onClose={() => setCreateGroupOpen(false)}
         currentUser={currentUser}
         users={users}
+        onGroupCreated={handleGroupCreated}
       />
     </Box>
   );

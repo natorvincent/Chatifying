@@ -6,40 +6,72 @@ import {
 } from '@mui/material';
 import axios from 'axios';
 
-const CreateGroupDialog = ({ open, onClose, currentUser, users }) => {
+const CreateGroupDialog = ({ open, onClose, currentUser, users, onGroupCreated }) => {
   const theme = useTheme();
   const [groupName, setGroupName] = useState('');
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
 
   const handleCreateGroup = async () => {
     if (!groupName.trim() || selectedUsers.length === 0) return;
+    
+    setIsCreating(true);
+    
     try {
+      // Get backend URL based on environment
+      const getBackendUrl = () => {
+        if (process.env.NODE_ENV === 'production') {
+          return 'https://chatifying.onrender.com';
+        } else {
+          return 'http://localhost:8080';
+        }
+      };
+      
+      console.log('Creating group with name:', groupName.trim());
+      console.log('Selected users:', selectedUsers);
+      
       // Create group via REST
-      const { data: newGroup } = await axios.post('/api/groups', {
+      const { data: newGroup } = await axios.post(`${getBackendUrl()}/api/groups`, {
         name: groupName.trim(),
         createdBy: currentUser.uid,
       });
+      
+      console.log('Group created successfully:', newGroup);
       const groupId = newGroup.id;
+      
       // Add current user as admin
-      await axios.post('/api/group-members', {
+      await axios.post(`${getBackendUrl()}/api/group-members`, {
         groupId,
         userId: currentUser.uid,
         role: 'admin',
       });
+      
       // Add selected users as members
       await Promise.all(selectedUsers.map(user =>
-        axios.post('/api/group-members', {
+        axios.post(`${getBackendUrl()}/api/group-members`, {
           groupId,
           userId: user.userId,
           role: 'member',
         })
       ));
+      
+      console.log('All members added to group successfully');
+      
+      // Call the onGroupCreated callback to refresh the sidebar
+      if (onGroupCreated) {
+        console.log('Calling onGroupCreated callback to refresh groups');
+        onGroupCreated();
+      }
+      
+      // Reset state and close dialog
       onClose();
       setGroupName('');
       setSelectedUsers([]);
     } catch (error) {
       console.error('Group creation failed:', error);
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -158,13 +190,13 @@ const CreateGroupDialog = ({ open, onClose, currentUser, users }) => {
         <Button onClick={onClose}>Cancel</Button>
         <Button 
           onClick={handleCreateGroup}
-          disabled={!groupName.trim() || selectedUsers.length === 0}
+          disabled={!groupName.trim() || selectedUsers.length === 0 || isCreating}
         >
-          Create Group
+          {isCreating ? 'Creating...' : 'Create Group'}
         </Button>
       </DialogActions>
     </Dialog>
   );
 };
 
-export default CreateGroupDialog; 
+export default CreateGroupDialog;
