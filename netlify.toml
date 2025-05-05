@@ -3,6 +3,7 @@
   command = "CI=false npm run build"
 
 [[redirects]]
-  from = "/*"
-  to = "/index.html"
+  from = "/api/*"
+  to = "https://chatifying.onrender.com/api/:splat"
   status = 200
+  force = true
