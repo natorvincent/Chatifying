@@ -10,6 +10,23 @@ import ForgotPassword from './components/login-register/ForgotPassword';
 import ProfileSetup from './components/login-register/ProfileSetup';
 import LandingPage from './components/landing/LandingPage';
 import chatifyLogo from './assets/chatifylogo.png';
+import axios from 'axios';
+import { getBackendUrl } from './services/api';
+
+
+
+
+const getBackendUrl = () => {
+  if (process.env.NODE_ENV === 'production') {
+    return 'https://chatifying.onrender.com';
+  } else {
+    return 'http://localhost:8080';
+  }
+};
+
+// Set default base URL for all axios requests
+axios.defaults.baseURL = getBackendUrl();
+
 
 // LoadingSpinner component - displays the Chatify logo while content is loading
 const LoadingSpinner = React.memo(() => (
