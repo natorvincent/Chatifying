@@ -35,6 +35,7 @@ const Sidebar = ({ currentUser, selectChatUser, handleLogout, activeChatUserId }
   useEffect(() => {
     async function fetchSidebarData() {
       try {
+        console.log('Fetching sidebar data, currentUser:', currentUser);
         // Fetch users, statuses, and groups in parallel
         const [usersRes, statusRes, groupsRes] = await Promise.all([
           axios.get('/api/users'),
@@ -42,18 +43,27 @@ const Sidebar = ({ currentUser, selectChatUser, handleLogout, activeChatUserId }
           axios.get('/api/groups'),
         ]);
         // Users list
-        const allUsers = usersRes.data.filter(u => u.id !== currentUser.id).map(user => ({
+        const allUsers = usersRes.data.filter(u => u.id !== currentUser.uid).map(user => ({
           ...user,
           userId: user.id  // Map id to userId for consistent access
         }));
         setUsers(allUsers);
         // User statuses map
         setUserStatuses(statusRes.data);
+
+        console.log('Groups from API:', groupsRes.data);
+        
         // Fetch members for each group
         const membersFetches = groupsRes.data.map(g => 
           axios.get(`/api/group-members/group/${g.id}`)
         );
         const membersResults = await Promise.all(membersFetches);
+        
+        // Log member results to debug
+        membersResults.forEach((result, idx) => {
+          console.log(`Members for group ${groupsRes.data[idx]?.id}:`, result.data);
+        });
+        
         // Enrich groups with member details
         const enrichedGroups = groupsRes.data.map((g, idx) => {
           const members = membersResults[idx].data.map(m => {
@@ -75,6 +85,14 @@ const Sidebar = ({ currentUser, selectChatUser, handleLogout, activeChatUserId }
           });
           return { ...g, members: membersMap };
         });
+
+        console.log('Enriched groups:', enrichedGroups);
+        console.log('Current user ID:', currentUser.uid);
+        
+        // Check if current user is in any of the groups
+        const userGroups = enrichedGroups.filter(g => g.members && g.members[currentUser.uid]);
+        console.log('User groups:', userGroups);
+        
         setGroups(enrichedGroups);
       } catch (error) {
         console.error('Error fetching sidebar data:', error);
@@ -388,6 +406,13 @@ const Sidebar = ({ currentUser, selectChatUser, handleLogout, activeChatUserId }
   useEffect(() => {
     let itemsToDisplay = [];
 
+    // Debug logging for groups filtering
+    console.log("Current user ID for filtering:", currentUser.uid);
+    console.log("All groups before filtering:", groups);
+    console.log("Groups with current user as member:", 
+      groups.filter(group => group.members && group.members[currentUser.uid])
+    );
+
     if (searchQuery.trim()) {
       const lowerCaseQuery = searchQuery.toLowerCase();
       if (view === 'groups') {
@@ -416,6 +441,7 @@ const Sidebar = ({ currentUser, selectChatUser, handleLogout, activeChatUserId }
       itemsToDisplay = groups.filter(group =>
         group.members && group.members[currentUser.uid]
       );
+      console.log("Filtered groups for display:", itemsToDisplay);
     }
 
     const sortedItems = itemsToDisplay.sort((a, b) => {
@@ -504,17 +530,65 @@ const Sidebar = ({ currentUser, selectChatUser, handleLogout, activeChatUserId }
     }
   };
 
-  // Function to handle group creation success
-  const handleGroupCreated = () => {
+  // Improved function to handle group creation success
+  const handleGroupCreated = async () => {
     console.log("Group created successfully, refreshing sidebar data");
     
-    // Use the stored reference to fetch sidebar data
-    if (fetchSidebarDataRef.current) {
-      fetchSidebarDataRef.current();
+    try {
+      // Direct fetch of latest groups data
+      const groupsRes = await axios.get('/api/groups');
+      const usersRes = await axios.get('/api/users');
+      
+      console.log("Newly fetched groups:", groupsRes.data);
+      
+      // Fetch members for each group
+      const membersFetches = groupsRes.data.map(g => 
+        axios.get(`/api/group-members/group/${g.id}`)
+      );
+      const membersResults = await Promise.all(membersFetches);
+      
+      // Log member results to debug
+      membersResults.forEach((result, idx) => {
+        console.log(`Members for group ${groupsRes.data[idx].id}:`, result.data);
+      });
+      
+      // Enrich groups with member details
+      const enrichedGroups = groupsRes.data.map((g, idx) => {
+        const members = membersResults[idx].data.map(m => {
+          const user = usersRes.data.find(u => u.id === m.userId);
+          return {
+            ...m,
+            username: user?.username,
+            profileImageUrl: user?.profileImageUrl
+          };
+        });
+        const membersMap = {};
+        members.forEach(m => {
+          membersMap[m.userId] = {
+            role: m.role,
+            joinedAt: m.joinedAt,
+            username: m.username,
+            profileImageUrl: m.profileImageUrl
+          };
+        });
+        return { ...g, members: membersMap };
+      });
+      
+      console.log("Enriched groups after creation:", enrichedGroups);
+      console.log("Current user ID for membership check:", currentUser.uid);
+      
+      // Check if current user is in any of the groups
+      const userGroups = enrichedGroups.filter(g => g.members && g.members[currentUser.uid]);
+      console.log("User's groups after creation:", userGroups);
+      
+      // Update groups state directly
+      setGroups(enrichedGroups);
+      
+      // Switch to groups view
+      setView('groups');
+    } catch (error) {
+      console.error("Error refreshing groups data:", error);
     }
-    
-    // After creating a group, switch to the groups view
-    setView('groups');
   };
 
   return (
