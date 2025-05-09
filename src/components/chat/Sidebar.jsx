@@ -531,26 +531,26 @@ const Sidebar = ({ currentUser, selectChatUser, handleLogout, activeChatUserId }
   };
 
   // Improved function to handle group creation success
-  const handleGroupCreated = async () => {
-    console.log("Group created successfully, refreshing sidebar data");
+  // Improved function to handle group creation success
+const handleGroupCreated = async () => {
+  console.log("Group created successfully, refreshing sidebar data");
+  
+  try {
+    // Direct fetch of latest groups data
+    const groupsRes = await axios.get('/api/groups');
+    console.log("Newly fetched groups:", groupsRes.data);
     
-    try {
-      // Direct fetch of latest groups data
-      const groupsRes = await axios.get('/api/groups');
+    if (groupsRes.data && groupsRes.data.length > 0) {
+      // First, get all users for reference
       const usersRes = await axios.get('/api/users');
       
-      console.log("Newly fetched groups:", groupsRes.data);
-      
-      // Fetch members for each group
-      const membersFetches = groupsRes.data.map(g => 
-        axios.get(`/api/group-members/group/${g.id}`)
-      );
-      const membersResults = await Promise.all(membersFetches);
-      
-      // Log member results to debug
-      membersResults.forEach((result, idx) => {
-        console.log(`Members for group ${groupsRes.data[idx].id}:`, result.data);
+      // Fetch members for each group with proper group ID in URL
+      const membersFetches = groupsRes.data.map(g => {
+        console.log(`Fetching members for group ${g.id}`);
+        return axios.get(`/api/group-members/group/${g.id}`);
       });
+      
+      const membersResults = await Promise.all(membersFetches);
       
       // Enrich groups with member details
       const enrichedGroups = groupsRes.data.map((g, idx) => {
@@ -562,6 +562,7 @@ const Sidebar = ({ currentUser, selectChatUser, handleLogout, activeChatUserId }
             profileImageUrl: user?.profileImageUrl
           };
         });
+        
         const membersMap = {};
         members.forEach(m => {
           membersMap[m.userId] = {
@@ -571,26 +572,22 @@ const Sidebar = ({ currentUser, selectChatUser, handleLogout, activeChatUserId }
             profileImageUrl: m.profileImageUrl
           };
         });
+        
         return { ...g, members: membersMap };
       });
       
       console.log("Enriched groups after creation:", enrichedGroups);
-      console.log("Current user ID for membership check:", currentUser.uid);
-      
-      // Check if current user is in any of the groups
-      const userGroups = enrichedGroups.filter(g => g.members && g.members[currentUser.uid]);
-      console.log("User's groups after creation:", userGroups);
       
       // Update groups state directly
       setGroups(enrichedGroups);
-      
-      // Switch to groups view
-      setView('groups');
-    } catch (error) {
-      console.error("Error refreshing groups data:", error);
     }
-  };
-
+    
+    // Switch to groups view
+    setView('groups');
+  } catch (error) {
+    console.error("Error refreshing groups data:", error);
+  }
+};
   return (
     <Box sx={{ 
       height: '100vh',
