@@ -13,28 +13,17 @@ const CreateGroupDialog = ({ open, onClose, currentUser, users, onGroupCreated }
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
-  // Function to get the backend URL based on environment
-  const getBackendUrl = () => {
-    if (process.env.NODE_ENV === 'production') {
-      return 'https://chatifying.onrender.com';
-    } else {
-      return 'http://localhost:8080';
-    }
-  };
-
   const handleCreateGroup = async () => {
     if (!groupName.trim() || selectedUsers.length === 0) return;
     
     setIsCreating(true);
     
     try {
-      const backendUrl = getBackendUrl();
-      
       console.log('Creating group with name:', groupName.trim());
       console.log('Selected users:', selectedUsers);
       
-      // Create group via REST
-      const { data: newGroup } = await axios.post(`${backendUrl}/api/groups`, {
+      // Create group via REST using relative URLs
+      const { data: newGroup } = await axios.post(`/api/groups`, {
         name: groupName.trim(),
         createdBy: currentUser.uid,
       });
@@ -43,7 +32,7 @@ const CreateGroupDialog = ({ open, onClose, currentUser, users, onGroupCreated }
       const groupId = newGroup.id;
       
       // Add current user as admin
-      await axios.post(`${backendUrl}/api/group-members`, {
+      await axios.post(`/api/group-members`, {
         groupId,
         userId: currentUser.uid,
         role: 'admin',
@@ -51,7 +40,7 @@ const CreateGroupDialog = ({ open, onClose, currentUser, users, onGroupCreated }
       
       // Add selected users as members
       await Promise.all(selectedUsers.map(user =>
-        axios.post(`${backendUrl}/api/group-members`, {
+        axios.post(`/api/group-members`, {
           groupId,
           userId: user.userId,
           role: 'member',
