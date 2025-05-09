@@ -533,61 +533,84 @@ const Sidebar = ({ currentUser, selectChatUser, handleLogout, activeChatUserId }
   // Improved function to handle group creation success
   // Improved function to handle group creation success
 const handleGroupCreated = async () => {
-  console.log("Group created successfully, refreshing sidebar data");
+  console.log("Group created successfully, manually refreshing groups");
   
   try {
+    // First get all users for reference
+    const usersRes = await axios.get('/api/users');
+    const allUsers = usersRes.data || [];
+    console.log("All users:", allUsers);
+    
     // Direct fetch of latest groups data
     const groupsRes = await axios.get('/api/groups');
     console.log("Newly fetched groups:", groupsRes.data);
     
     if (groupsRes.data && groupsRes.data.length > 0) {
-      // First, get all users for reference
-      const usersRes = await axios.get('/api/users');
-      
-      // Fetch members for each group with proper group ID in URL
-      const membersFetches = groupsRes.data.map(g => {
-        console.log(`Fetching members for group ${g.id}`);
-        return axios.get(`/api/group-members/group/${g.id}`);
+      // Create processed groups with at least current user as member
+      const processedGroups = groupsRes.data.map(group => {
+        // Create a default members map with at least the current user as admin
+        // This ensures even if member API fails, user can see their groups
+        const membersMap = {
+          [currentUser.uid]: {
+            userId: currentUser.uid,
+            role: 'admin',
+            joinedAt: new Date().toISOString(),
+            username: currentUser.username || currentUser.displayName || 'You',
+            profileImageUrl: currentUser.profileImageUrl || ''
+          }
+        };
+        
+        return { ...group, members: membersMap };
       });
       
-      const membersResults = await Promise.all(membersFetches);
+      console.log("Processed groups with default members:", processedGroups);
       
-      // Enrich groups with member details
-      const enrichedGroups = groupsRes.data.map((g, idx) => {
-        const members = membersResults[idx].data.map(m => {
-          const user = usersRes.data.find(u => u.id === m.userId);
-          return {
-            ...m,
-            username: user?.username,
-            profileImageUrl: user?.profileImageUrl
-          };
-        });
-        
-        const membersMap = {};
-        members.forEach(m => {
-          membersMap[m.userId] = {
-            role: m.role,
-            joinedAt: m.joinedAt,
-            username: m.username,
-            profileImageUrl: m.profileImageUrl
-          };
-        });
-        
-        return { ...g, members: membersMap };
-      });
+      // Update groups state immediately with basic data
+      setGroups(processedGroups);
       
-      console.log("Enriched groups after creation:", enrichedGroups);
-      
-      // Update groups state directly
-      setGroups(enrichedGroups);
+      // Try to fetch detailed members for each group
+      for (const group of processedGroups) {
+        try {
+          console.log(`Fetching members for group ${group.id}`);
+          const membersRes = await axios.get(`/api/group-members/group/${group.id}`);
+          
+          if (membersRes.data && Array.isArray(membersRes.data)) {
+            console.log(`Members for group ${group.id}:`, membersRes.data);
+            
+            // Process members with user details
+            const updatedMembersMap = {};
+            membersRes.data.forEach(member => {
+              const user = allUsers.find(u => u.id === member.userId);
+              updatedMembersMap[member.userId] = {
+                ...member,
+                username: user?.username || 'Unknown User',
+                profileImageUrl: user?.profileImageUrl || ''
+              };
+            });
+            
+            // Update this specific group with full member details
+            setGroups(prevGroups => 
+              prevGroups.map(g => 
+                g.id === group.id ? { ...g, members: updatedMembersMap } : g
+              )
+            );
+          }
+        } catch (memberError) {
+          console.warn(`Could not fetch members for group ${group.id}:`, memberError);
+          // Continue with next group, we already have basic display
+        }
+      }
     }
     
-    // Switch to groups view
+    // Switch to groups view to show the new group
     setView('groups');
   } catch (error) {
     console.error("Error refreshing groups data:", error);
+    // Try switching to groups view anyway
+    setView('groups');
   }
 };
+
   return (
     <Box sx={{ 
       height: '100vh',
